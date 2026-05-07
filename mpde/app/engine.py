@@ -56,9 +56,16 @@ def is_ip_address(host: str) -> bool:
         return False
 
 
-def get_brand_similarity(host: str) -> float:
-    host = host.lower()
-    tokens = re.split(r"[\.\-_/]+", host)
+def get_brand_similarity_info(host: str, domain: str) -> Tuple[float, bool]:
+    host_lower = (host or "").lower()
+    domain_lower = (domain or "").lower()
+    
+    # If the root domain is exactly the brand (e.g., 'paypal' in paypal.com), it's likely safe.
+    if domain_lower in COMMON_BRANDS:
+        return 1.0, True
+
+    # Otherwise, it's not the official domain. Let's see if they are trying to fake it.
+    tokens = re.split(r"[\.\-_/]+", host_lower)
     best = 0.0
     for brand in COMMON_BRANDS:
         for token in tokens:
@@ -67,9 +74,7 @@ def get_brand_similarity(host: str) -> float:
             ratio = difflib.SequenceMatcher(None, token, brand).ratio()
             if ratio > best:
                 best = ratio
-            if best >= 0.55:
-                return best
-    return best
+    return best, False
 
 
 def count_repeated_query_keys(query_params: Dict[str, list]) -> int:
@@ -94,6 +99,8 @@ def get_lexical_features(url: str) -> Dict[str, Any]:
     query_params = urllib.parse.parse_qs(query)
     path_segments = [seg for seg in path.split("/") if seg]
     suspicious_path_tokens = ["login", "secure", "account", "bank", "verify", "password"]
+    # Calculate this BEFORE the features dictionary
+    brand_sim, is_exact = get_brand_similarity_info(host, ext.domain)
 
     features = {
         "url_length": len(full_url),
@@ -130,7 +137,8 @@ def get_lexical_features(url: str) -> Dict[str, Any]:
         "has_fragment": 1 if fragment else 0,
         "has_query": 1 if query else 0,
         "has_suspicious_scheme": 1 if parsed.scheme not in ("http", "https", "") else 0,
-        "brand_similarity": get_brand_similarity(host or ext.domain or full_url),
+        "brand_similarity": brand_sim,
+        "is_exact_brand": 1 if is_exact else 0,
         "special_char_count": sum(full_url.count(c) for c in ["@", "%", ";", "_", "=", "?"]),
         "suspicious_path": 1 if any(term in path.lower() for term in suspicious_path_tokens) else 0,
     }
@@ -192,126 +200,141 @@ async def analyze_url_pipeline(url: str) -> Tuple[str, float, Dict[str, Any]]:
 
     risk_score = 0.0
 
+    # --- LEXICAL FEATURES (Weights Increased) ---
     if lexical["entropy"] > 4.0:
-        risk_score += 0.20
+        risk_score += 0.25  # BUFFED from 0.20
     if lexical["url_length"] > 90:
-        risk_score += 0.18
+        risk_score += 0.20  # BUFFED from 0.18
     if lexical["host_length"] > 40:
-        risk_score += 0.12
+        risk_score += 0.15  # BUFFED from 0.12
     if lexical["path_length"] > 50:
-        risk_score += 0.12
+        risk_score += 0.15  # BUFFED from 0.12
     if lexical["query_length"] > 40:
-        risk_score += 0.10
+        risk_score += 0.12  # BUFFED from 0.10
     if lexical["digit_ratio"] > 0.18:
-        risk_score += 0.18
+        risk_score += 0.25  # BUFFED from 0.18
     if lexical["dot_count"] > 5:
-        risk_score += 0.10
+        risk_score += 0.15  # BUFFED from 0.10
     if lexical["hyphen_count"] > 2:
-        risk_score += 0.10
+        risk_score += 0.15  # BUFFED from 0.10
     if lexical["suspicious_token_count"] > 0:
-        risk_score += min(0.35, 0.07 * lexical["suspicious_token_count"])
+        risk_score += min(0.45, 0.15 * lexical["suspicious_token_count"]) # BUFFED heavily
     if lexical["suspicious_path_token_count"] > 0:
-        risk_score += 0.10
+        risk_score += 0.15  # BUFFED from 0.10
     if lexical["is_ip_address"]:
-        risk_score += 0.35
+        risk_score += 0.50  # BUFFED from 0.35 (IPs in URLs are huge red flags)
     if lexical["has_high_risk_tld"]:
-        risk_score += 0.22
+        risk_score += 0.35  # BUFFED from 0.22
     if lexical["has_punycode"]:
-        risk_score += 0.22
+        risk_score += 0.40  # BUFFED from 0.22 (Punycode is almost always malicious)
     if lexical["has_non_ascii"]:
-        risk_score += 0.18
+        risk_score += 0.25  # BUFFED from 0.18
     if lexical["encoded_char_ratio"] > 0.03:
-        risk_score += 0.12
+        risk_score += 0.15  # BUFFED from 0.12
     if lexical["param_count"] > 5:
-        risk_score += 0.12
+        risk_score += 0.15  # BUFFED from 0.12
     if lexical["repeated_param_count"] > 0:
-        risk_score += 0.12
+        risk_score += 0.15  # BUFFED from 0.12
     if lexical["special_char_count"] >= 4:
-        risk_score += 0.12
+        risk_score += 0.15  # BUFFED from 0.12
     if lexical["longest_path_segment"] > 40:
-        risk_score += 0.12
+        risk_score += 0.15  # BUFFED from 0.12
     if lexical["path_segment_count"] > 6:
-        risk_score += 0.08
+        risk_score += 0.10  # BUFFED from 0.08
     if lexical["at_symbol"]:
-        risk_score += 0.25
+        risk_score += 0.40  # BUFFED from 0.25 (@ symbol is a classic credential stealer)
     if lexical["multiple_at_symbols"] > 1:
-        risk_score += 0.18
+        risk_score += 0.25  # BUFFED from 0.18
     if lexical["double_slash_in_path"]:
-        risk_score += 0.15
+        risk_score += 0.20  # BUFFED from 0.15
     if lexical["uses_http"] and not lexical["uses_https"]:
-        risk_score += 0.10
+        risk_score += 0.15  # BUFFED from 0.10
     if lexical["uses_non_standard_port"]:
-        risk_score += 0.08
+        risk_score += 0.15  # BUFFED from 0.08
     if lexical["has_fragment"] and lexical["fragment_length"] > 20:
-        risk_score += 0.08
+        risk_score += 0.10  # BUFFED from 0.08
     if lexical["has_suspicious_scheme"]:
-        risk_score += 0.10
-    if lexical["brand_similarity"] >= 0.80:
-        risk_score -= 0.28
+        risk_score += 0.15  # BUFFED from 0.10
+    
+    # --- FIXED BRAND SIMILARITY BUG ---
+    # We use .get() in case 'is_exact_brand' hasn't been added to your features list yet
+    if lexical.get("is_exact_brand"):
+        risk_score -= 0.40  # Safe: This is the real, official domain
+    elif lexical["brand_similarity"] >= 0.80:
+        risk_score += 0.40  # FIXED: Typosquatting! Add risk, do not subtract it.
     elif lexical["brand_similarity"] >= 0.65:
-        risk_score -= 0.12
+        risk_score += 0.20  # FIXED: Typosquatting! Add risk, do not subtract it.
 
     risk_score += detect_homograph_attacks(url)
     risk_score += detect_url_obfuscation(url)
 
+    # --- BEHAVIORAL FEATURES (Weights Increased) ---
     if behavioral and "error" not in behavioral:
         whois_info = behavioral.get("whois", {})
         age = whois_info.get("age_days")
         if age is not None:
             if age < 30:
-                risk_score += 0.55
+                risk_score += 0.60  # BUFFED from 0.55 (New domains are highly suspicious)
             elif age < 180:
-                risk_score += 0.10  # Further reduced for safety
+                risk_score += 0.20  # BUFFED from 0.10
             elif age >= 365:
                 risk_score -= 0.10
+        else:
+            # Added penalty if WHOIS data is completely missing/hidden
+            risk_score += 0.15
 
         dns_info = behavioral.get("dns", {})
         if not dns_info.get("resolved", False):
-            risk_score += 0.22
+            risk_score += 0.35  # BUFFED from 0.22
         elif dns_info.get("ttl") and dns_info["ttl"] < 120:
-            risk_score += 0.12
+            risk_score += 0.15  # BUFFED from 0.12
         if len(dns_info.get("ips", [])) > 3:
-            risk_score += 0.10
+            risk_score += 0.15  # BUFFED from 0.10
 
         mx_info = behavioral.get("mx", {})
         if mx_info.get("count", 0) == 0:
-            risk_score += 0.10
+            risk_score += 0.15  # BUFFED from 0.10
 
         txt_info = behavioral.get("txt", {})
         spf_present = any("v=spf1" in rec.lower() for rec in txt_info.get("records", []))
         dmarc_present = any("_dmarc" in rec.lower() or "v=dmarc1" in rec.lower() for rec in txt_info.get("records", []))
         if not spf_present:
-            risk_score += 0.08
+            risk_score += 0.10  # BUFFED from 0.08
         if not dmarc_present:
-            risk_score += 0.08
+            risk_score += 0.10  # BUFFED from 0.08
 
         redirects = behavioral.get("redirects", {})
         if redirects.get("redirect_count", 0) >= 2:
-            risk_score += 0.12
+            risk_score += 0.18  # BUFFED from 0.12
         if str(redirects.get("final_url", "")).lower() != str(url).lower():
-            risk_score += 0.08
+            risk_score += 0.12  # BUFFED from 0.08
 
         tls_info = behavioral.get("tls", {})
         if tls_info.get("self_signed"):
-            risk_score += 0.22
+            risk_score += 0.35  # BUFFED from 0.22
         if tls_info.get("expiry_days") is not None:
             if tls_info["expiry_days"] < 30:
-                risk_score += 0.18
+                risk_score += 0.25  # BUFFED from 0.18
             elif tls_info["expiry_days"] < 90:
-                risk_score += 0.08
+                risk_score += 0.15  # BUFFED from 0.08
 
         http_headers = behavioral.get("http_headers", {})
         if http_headers.get("status_code") and http_headers["status_code"] >= 400:
-            risk_score += 0.15
+            risk_score += 0.20  # BUFFED from 0.15
         if not http_headers.get("server"):
-            risk_score += 0.08
+            risk_score += 0.12  # BUFFED from 0.08
 
         if behavioral.get("threat_intel", {}).get("match"):
-            risk_score += 0.50
+            risk_score += 0.80  # BUFFED from 0.50 (If Threat Intel flags it, it's very bad)
 
-        # Safe side: If DNS resolves and TLS is valid, reduce risk
-        if dns_info.get("resolved") and tls_info.get("valid"):
-            risk_score -= 0.10
+        # Safe side: If DNS resolves, TLS is valid, and it's NOT an IP address, reduce risk
+        if dns_info.get("resolved") and tls_info.get("valid") and not lexical["is_ip_address"]:
+            risk_score -= 0.15
+
+    # Ensure the final confidence score never goes below 0 or above 1.0
+    final_confidence = min(max(risk_score, 0.0), 1.0)
+    
+    return "Unknown", final_confidence, lexical
 
     # AI-Powered Ensemble
     load_ml_model()
