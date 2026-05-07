@@ -57,12 +57,22 @@ app.add_middleware(
 # ==========================================
 # 4. STATIC FILES & TEMPLATES
 # ==========================================
-# Ensure folders exist to prevent startup crashes
-os.makedirs("app/static", exist_ok=True)
-os.makedirs("app/templates", exist_ok=True)
 
-app.mount("/static", StaticFiles(directory="app/static"), name="static")
-templates = Jinja2Templates(directory="app/templates")
+# 1. Get the absolute path to the directory where THIS main.py file lives
+# This will point to .../mpde/app/
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+
+# 2. Define absolute paths for static and templates
+STATIC_DIR = os.path.join(BASE_DIR, "static")
+TEMPLATE_DIR = os.path.join(BASE_DIR, "templates")
+
+# 3. Ensure the directories exist using the absolute paths
+os.makedirs(STATIC_DIR, exist_ok=True)
+os.makedirs(TEMPLATE_DIR, exist_ok=True)
+
+# 4. Mount and initialize using the absolute paths
+app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
+templates = Jinja2Templates(directory=TEMPLATE_DIR)
 
 # ==========================================
 # 5. ROUTE REGISTRATION
