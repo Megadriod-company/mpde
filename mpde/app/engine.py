@@ -67,7 +67,7 @@ def get_brand_similarity(host: str) -> float:
             ratio = difflib.SequenceMatcher(None, token, brand).ratio()
             if ratio > best:
                 best = ratio
-            if best >= 0.95:
+            if best >= 0.55:
                 return best
     return best
 
@@ -320,11 +320,11 @@ async def analyze_url_pipeline(url: str) -> Tuple[str, float, Dict[str, Any]]:
 
     final_confidence = max(0.0, min(risk_score, 1.0))
 
-    if final_confidence >= 0.80:
+    if final_confidence >= 0.70:
         verdict = "Critical Phishing"
-    elif final_confidence >= 0.55:
+    elif final_confidence >= 0.40:
         verdict = "Suspicious"
-    elif final_confidence >= 0.25:
+    elif final_confidence >= 0.15:
         verdict = "Moderate Risk"
     else:
         verdict = "Benign"
