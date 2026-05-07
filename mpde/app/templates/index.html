@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MPDE | Megadriod Phishing Engine</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <style>
+        .cyber-gradient { background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%); }
+        .glass { background: rgba(255, 255, 255, 0.03); -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px); border: 1px solid rgba(255, 255, 255, 0.1); }
+    </style>
+</head>
+<body class="cyber-gradient text-slate-200 min-h-screen font-sans">
+
+    <nav class="border-b border-slate-800 p-4">
+        <div class="container mx-auto flex justify-between items-center">
+            <div class="flex items-center space-x-2">
+                <img src="/static/logo.png" alt="Megadriod Logo" class="w-8 h-8 rounded-lg">
+                <span class="text-xl font-bold tracking-tight">Megadriod Phishing Detection Engine</span>
+            </div>
+            <div class="text-sm text-slate-400">
+                <span class="mr-4"><i class="fas fa-server mr-1"></i> Megadriod Innovation Labs</span>
+                <span><i class="fas fa-clock mr-1"></i> MCC</span>
+            </div>
+        </div>
+    </nav>
+
+    <main class="container mx-auto px-4 py-12">
+        <div class="max-w-4xl mx-auto text-center mb-12">
+            <h1 class="text-4xl font-extrabold mb-4">Enterprise Phishing Detection</h1>
+            <p class="text-slate-400">Analyze URLs using advanced lexical heuristics and real-time behavioral DNS/WHOIS intelligence.</p>
+        </div>
+
+        <div class="max-w-3xl mx-auto glass p-6 rounded-2xl mb-12">
+            <div class="flex flex-col md:flex-row gap-4">
+                <input type="text" id="urlInput" placeholder="Enter URL to analyze (e.g., https://secure-login.com)" 
+                       class="flex-1 bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all text-white">
+                <button onclick="analyzeURL()" id="scanBtn" class="bg-blue-600 hover:bg-blue-700 text-white font-bold px-8 py-3 rounded-xl transition-all flex items-center justify-center">
+                    <i class="fas fa-search-dollar mr-2"></i> SCAN URL
+                </button>
+            </div>
+        </div>
+
+        <div id="resultsArea" class="max-w-5xl mx-auto hidden">
+            </div>
+
+        <div id="loading" class="hidden flex flex-col items-center py-12">
+            <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mb-4"></div>
+            <p class="text-blue-400 animate-pulse">Running Multi-Stage Analysis...</p>
+        </div>
+    </main>
+
+    <footer class="border-t border-slate-800 p-4 mt-12">
+        <div class="container mx-auto text-center">
+            <p class="text-slate-500 text-sm">Built by Megadriod Innovation Labs unit. Acknowledges the recent research publication on Feature-Engineered Machine Learning Models for Phishing URL Classification using Entropy and Behavioural Signals.</p>
+        </div>
+    </footer>
+
+    <script>
+        async function analyzeURL() {
+            const url = document.getElementById('urlInput').value;
+            const resultsArea = document.getElementById('resultsArea');
+            const loading = document.getElementById('loading');
+            const scanBtn = document.getElementById('scanBtn');
+
+            if (!url) return alert("Please enter a URL");
+
+            // UI State Change
+            loading.classList.remove('hidden');
+            resultsArea.classList.add('hidden');
+            scanBtn.disabled = true;
+
+            try {
+                const response = await fetch('/api/v1/predict', {
+                    method: 'POST',
+                    headers: { 
+                        'Content-Type': 'application/json',
+                        'X-API-Key': 'MG-2026-SECURE-PHISH-DETECTOR-LGS' // Use key from your .env
+                    },
+                    body: JSON.stringify({ url: url })
+                });
+
+                const data = await response.json();
+                renderResults(data);
+            } catch (error) {
+                console.error("Scan failed:", error);
+                alert("Engine communication error.");
+            } finally {
+                loading.classList.add('hidden');
+                scanBtn.disabled = false;
+            }
+        }
+
+        function renderResults(data) {
+            const resultsArea = document.getElementById('resultsArea');
+            const vColor = data.verdict === 'Benign' ? 'text-green-400' : 'text-red-500';
+            const bColor = data.verdict === 'Benign' ? 'border-green-500/30' : 'border-red-500/30';
+
+            resultsArea.innerHTML = `
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                    <div class="glass p-6 rounded-2xl border-l-4 ${bColor}">
+                        <h3 class="text-slate-400 uppercase text-xs font-bold tracking-widest mb-2">Final Verdict</h3>
+                        <p class="text-3xl font-black ${vColor}">${data.verdict}</p>
+                        <p class="text-sm mt-2">Confidence: ${(data.confidence_score * 100).toFixed(1)}%</p>
+                    </div>
+
+                    <div class="glass p-6 rounded-2xl">
+                        <h3 class="text-slate-400 uppercase text-xs font-bold tracking-widest mb-2">Lexical Analysis</h3>
+                        <div class="space-y-2">
+                            <div class="flex justify-between text-sm"><span>Entropy:</span> <span>${data.features.entropy}</span></div>
+                            <div class="flex justify-between text-sm"><span>URL Length:</span> <span>${data.features.url_length}</span></div>
+                            <div class="flex justify-between text-sm"><span>Subdomains:</span> <span>${data.features.subdomain_count}</span></div>
+                        </div>
+                    </div>
+
+                    <div class="glass p-6 rounded-2xl">
+                        <h3 class="text-slate-400 uppercase text-xs font-bold tracking-widest mb-2">Behavioral Context</h3>
+                        <div class="space-y-2 text-sm">
+                            <div class="flex justify-between"><span>Domain Age:</span> <span>${data.features.behavioral_summary.whois?.age_days || 'Unknown'} days</span></div>
+                            <div class="flex justify-between"><span>DNS TTL:</span> <span>${data.features.behavioral_summary.dns?.ttl || 'N/A'}s</span></div>
+                            <div class="flex justify-between"><span>Status:</span> <span>${data.features.behavioral_summary.dns?.resolved ? 'Active' : 'Inactive'}</span></div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="mt-6 glass p-6 rounded-2xl overflow-x-auto">
+                    <h3 class="text-slate-400 uppercase text-xs font-bold tracking-widest mb-4">Raw Metadata JSON</h3>
+                    <pre class="text-[10px] text-blue-300 bg-black/40 p-4 rounded-lg">${JSON.stringify(data.features, null, 2)}</pre>
+                </div>
+            `;
+            resultsArea.classList.remove('hidden');
+        }
+    </script>
+</body>
+</html>
