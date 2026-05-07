@@ -333,14 +333,22 @@ async def analyze_url_pipeline(url: str) -> Tuple[str, float, Dict[str, Any]]:
 
     # Ensure the final confidence score never goes below 0 or above 1.0
     final_confidence = min(max(risk_score, 0.0), 1.0)
-    
-    return "Unknown", final_confidence, lexical
+   # Ensure the final confidence score never goes below 0 or above 1.0
+    # (Removed the early return here!)
 
-    # AI-Powered Ensemble
-    load_ml_model()
-    ai_score = predict_with_ai(lexical, behavioral)
-    risk_score = (risk_score + ai_score) / 2.0
+    # ==========================================
+    # 5. AI-POWERED ENSEMBLE & FINAL VERDICT
+    # ==========================================
+    try:
+        load_ml_model()
+        ai_score = predict_with_ai(lexical, behavioral)
+        # Blend the rule-based score with the AI score
+        risk_score = (risk_score + ai_score) / 2.0
+    except Exception as exc:
+        logger.warning(f"AI prediction failed, falling back to rule-based score: {exc}")
+        ai_score = 0.0
 
+    # Recalculate final confidence after AI blend
     final_confidence = max(0.0, min(risk_score, 1.0))
 
     if final_confidence >= 0.70:
@@ -358,8 +366,10 @@ async def analyze_url_pipeline(url: str) -> Tuple[str, float, Dict[str, Any]]:
         "homograph_risk": detect_homograph_attacks(url),
         "obfuscation_risk": detect_url_obfuscation(url),
         "ai_score": ai_score,
-        "ai_explanations": explain_prediction(lexical, behavioral, url),
+        "ai_explanations": explain_prediction(lexical, behavioral, url) if ai_score > 0 else "AI unavailable",
     }
 
     logger.info(f"URL Analysis: {url} | Verdict: {verdict} | Confidence: {final_confidence:.2f}")
+    
+    # This is the ONLY return statement that should be at the end of this function
     return verdict, final_confidence, features
