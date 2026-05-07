@@ -76,8 +76,9 @@ async def serve_dashboard(request: Request):
     Serves the UI where you'll paste URLs for analysis.
     """
     return templates.TemplateResponse(
-        "index.html", 
-        {"request": request, "title": "MPDE Dashboard"}
+    request=request,
+    name="index.html",
+    context={"title": "MPDE Dashboard"} 
     )
 
 # ==========================================
