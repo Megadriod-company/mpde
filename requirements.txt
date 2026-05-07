@@ -11,4 +11,4 @@ sqlalchemy==2.0.32
 structlog==24.1.0          # Enterprise JSON logging
 slowapi==0.1.9             # Rate limiting
 jinja2[standard]==3.1.5
-psycopg2-2.9.12
+psycopg2
